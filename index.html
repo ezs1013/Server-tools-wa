@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WA Gateway — EVAN13</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI',sans-serif; background:#0D1B2A; color:#E3F2FD; min-height:100vh; }
+  header { background:#1565C0; padding:20px 32px; display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:22px; color:#fff; }
+  header span { font-size:13px; color:#BBDEFB; }
+  .container { max-width:900px; margin:0 auto; padding:32px 16px; }
+
+  .card { background:#152238; border-radius:16px; padding:24px; margin-bottom:20px; border:1px solid #1E3A5F; }
+  .card h2 { font-size:16px; color:#42A5F5; margin-bottom:16px; }
+
+  input { width:100%; padding:12px 16px; border-radius:10px; border:1px solid #1E3A5F;
+    background:#0D1B2A; color:#E3F2FD; font-size:14px; outline:none; }
+  input:focus { border-color:#1565C0; }
+  button { padding:12px 24px; border-radius:10px; border:none; cursor:pointer;
+    font-size:14px; font-weight:bold; transition:0.2s; }
+  .btn-blue { background:#1565C0; color:#fff; }
+  .btn-blue:hover { background:#1976D2; }
+  .btn-red { background:#C62828; color:#fff; }
+  .btn-red:hover { background:#D32F2F; }
+
+  .sender-list { display:flex; flex-direction:column; gap:10px; }
+  .sender-item { background:#0D1B2A; border-radius:10px; padding:14px 16px;
+    display:flex; align-items:center; justify-content:space-between; border:1px solid #1E3A5F; }
+  .sender-num { font-size:14px; font-weight:bold; }
+  .badge { padding:4px 10px; border-radius:20px; font-size:11px; font-weight:bold; }
+  .badge-connected { background:#2E7D32; color:#fff; }
+  .badge-connecting { background:#E65100; color:#fff; }
+  .badge-qr { background:#1565C0; color:#fff; }
+  .badge-disconnected { background:#424242; color:#fff; }
+
+  .qr-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8);
+    z-index:999; align-items:center; justify-content:center; }
+  .qr-modal.show { display:flex; }
+  .qr-box { background:#152238; border-radius:20px; padding:32px; text-align:center; max-width:340px; width:90%; }
+  .qr-box h3 { color:#42A5F5; margin-bottom:8px; }
+  .qr-box p { color:#90CAF9; font-size:13px; margin-bottom:16px; }
+  .qr-box img { width:260px; height:260px; border-radius:12px; background:#fff; padding:8px; }
+  .qr-close { margin-top:16px; display:block; color:#90CAF9; cursor:pointer; font-size:13px; }
+
+  .url-box { background:#0D1B2A; border-radius:10px; padding:14px 16px;
+    font-family:monospace; font-size:13px; color:#42A5F5; word-break:break-all;
+    border:1px solid #1E3A5F; margin-top:8px; }
+  .copy-btn { margin-top:8px; }
+
+  #inputRow { display:flex; gap:10px; }
+  #inputRow input { flex:1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>⚡ WA Gateway</h1>
+    <span>by EVAN13 — Panel Sender</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- URL Server -->
+  <div class="card">
+    <h2>🌐 URL Server (masukkan ke APK)</h2>
+    <div class="url-box" id="serverUrl">Memuat...</div>
+    <button class="btn-blue copy-btn" onclick="copyUrl()">📋 Copy URL</button>
+  </div>
+
+  <!-- Tambah Sender -->
+  <div class="card">
+    <h2>➕ Tambah Nomor Sender</h2>
+    <div id="inputRow">
+      <input type="tel" id="inputNumber" placeholder="Contoh: 6281234567890" />
+      <button class="btn-blue" onclick="addSender()">Tambah</button>
+    </div>
+    <p style="color:#90CAF9;font-size:12px;margin-top:8px;">Format: 62xxx (tanpa + atau spasi)</p>
+  </div>
+
+  <!-- Daftar Sender -->
+  <div class="card">
+    <h2>📱 Daftar Sender</h2>
+    <div class="sender-list" id="senderList">
+      <p style="color:#546E7A;font-size:14px;">Belum ada sender terdaftar</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal QR -->
+<div class="qr-modal" id="qrModal">
+  <div class="qr-box">
+    <h3>Scan QR Code</h3>
+    <p>Buka WhatsApp → Perangkat Tertaut → Tautkan Perangkat</p>
+    <img id="qrImg" src="" alt="QR Code"/>
+    <span class="qr-close" onclick="closeQr()">✕ Tutup</span>
+  </div>
+</div>
+
+<script>
+  // Tampilkan URL server
+  const serverUrl = window.location.origin;
+  document.getElementById('serverUrl').textContent = serverUrl;
+
+  function copyUrl() {
+    navigator.clipboard.writeText(serverUrl);
+    alert('URL disalin: ' + serverUrl);
+  }
+
+  async function addSender() {
+    const num = document.getElementById('inputNumber').value.trim();
+    if (!num) { alert('Masukkan nomor sender!'); return; }
+    const res = await fetch('/api/sender/add', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ number: num })
+    });
+    const data = await res.json();
+    alert(data.message || data.status);
+    document.getElementById('inputNumber').value = '';
+    loadSenders();
+    // Cek QR tiap 3 detik selama 30 detik
+    let tries = 0;
+    const interval = setInterval(async () => {
+      tries++;
+      const qrRes = await fetch('/api/sender/qr/' + data.number);
+      if (qrRes.ok) {
+        const qrData = await qrRes.json();
+        showQr(qrData.qr, data.number);
+        clearInterval(interval);
+      }
+      if (tries >= 10) clearInterval(interval);
+    }, 3000);
+  }
+
+  function showQr(qrBase64, number) {
+    document.getElementById('qrImg').src = qrBase64;
+    document.getElementById('qrModal').classList.add('show');
+    // Auto reload sender list setelah scan
+    const check = setInterval(async () => {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      const sender = data.senders.find(s => s.number === number);
+      if (sender && sender.status === 'connected') {
+        closeQr();
+        loadSenders();
+        clearInterval(check);
+      }
+    }, 3000);
+  }
+
+  function closeQr() {
+    document.getElementById('qrModal').classList.remove('show');
+  }
+
+  async function showSenderQr(number) {
+    const res = await fetch('/api/sender/qr/' + number);
+    if (!res.ok) { alert('QR tidak tersedia, sender mungkin sudah terhubung'); return; }
+    const data = await res.json();
+    showQr(data.qr, number);
+  }
+
+  async function deleteSender(number) {
+    if (!confirm('Hapus sender ' + number + '?')) return;
+    await fetch('/api/sender/' + number, { method:'DELETE' });
+    loadSenders();
+  }
+
+  function statusBadge(status) {
+    const map = {
+      connected: ['✅ Terhubung','badge-connected'],
+      connecting: ['🔄 Connecting','badge-connecting'],
+      qr: ['📷 Scan QR','badge-qr'],
+      disconnected: ['❌ Disconnect','badge-disconnected']
+    };
+    const [label, cls] = map[status] || ['❓ Unknown','badge-disconnected'];
+    return `<span class="badge ${cls}">${label}</span>`;
+  }
+
+  async function loadSenders() {
+    const res = await fetch('/api/sender/list');
+    const data = await res.json();
+    const list = document.getElementById('senderList');
+    if (!data.senders.length) {
+      list.innerHTML = '<p style="color:#546E7A;font-size:14px;">Belum ada sender terdaftar</p>';
+      return;
+    }
+    list.innerHTML = data.senders.map(s => `
+      <div class="sender-item">
+        <span class="sender-num">📱 ${s.number}</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${statusBadge(s.status)}
+          ${s.hasQr ? `<button class="btn-blue" style="padding:6px 12px;font-size:12px;" onclick="showSenderQr('${s.number}')">QR</button>` : ''}
+          <button class="btn-red" style="padding:6px 12px;font-size:12px;" onclick="deleteSender('${s.number}')">Hapus</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Auto refresh tiap 5 detik
+  loadSenders();
+  setInterval(loadSenders, 5000);
+</script>
+</body>
+</html>
